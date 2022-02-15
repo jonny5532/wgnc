@@ -6,31 +6,51 @@ wireguard-go's user-space networking stack.
 Allows you to easily SSH over WireGuard without having to set up a local
 WireGuard interface first.
 
+
+## Caveats
+
+- Uses a patched wireguard-go (due to a incompatibility with the
+  netip.AddrFromSlice signature).
+
+- The code lacks proper error handling, particularly the
+  WireGuard configuration parsing and network connection state handling.
+
+- The code is poorly tested, use at your own risk!
+
+
+## Building
+
+If you have Docker installed, you can build with:
+
+`./build.sh`
+
+which will place `wgnc` in the same directory.
+
+You may need to supply the `GOOS` and `GOARCH` environment variables in the
+Dockerfile to build for other architectures.
+
+
 ## Usage (with SSH)
 
 1. Create a WireGuard keypair, and register it with the server, as normal.
 
-2. Create a JSON config file for the server:
-
-```
-{
-    "local_internal_ip": "10.0.0.100",
-    "local_private_key": "<base64 private key for a peer known by the server>",
-
-	"remote_internal_ip": "10.0.0.1",
-	"remote_external_ip": "<public IP of the server>",
-    "remote_external_port": <port number on the server that WireGuard is listening on>,
-    "remote_public_key": "<base64 public key of server you are connecting to>",
-
-    "remote_connect_ip": "10.0.0.1",
-	"remote_connect_port": 22
-}
-```
+2. Create a local config file in the format expected by `wg-quick`. The first
+   peer in the file will be the one used for connecting.
 
 3. Use `ProxyCommand` with SSH:
 
-`ssh -o ProxyCommand="./wgnc -c config.json" user@server`
+`ssh -o ProxyCommand="./wgnc -c wg0.conf 10.0.0.1 22" user@server`
 
-## Using `setup_server.py` script
+where `10.0.0.1` is the internal IP of the remote peer. If the first entry in
+the `AllowedIPs` for the peer is a `/32` then this can be omitted:
 
-You can use the `setup_server.py` script to set up WireGuard on a server and generate a corresponding json file.
+`ssh -o ProxyCommand="./wgnc -c wg0.conf" user@server`
+
+
+## Using `setup_remote_server.py` script
+
+You can use the `setup_remote_server.py <host>` script to set up WireGuard on a
+server and generate a corresponding config file.
+
+This script is very hacky - it will sudo on the remote host and meddle with the
+WireGuard configuration, firewall and systemd services, be warned!

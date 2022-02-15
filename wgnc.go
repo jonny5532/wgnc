@@ -13,14 +13,15 @@ package main
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
+	"errors"
     "flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 
 	"golang.zx2c4.com/go118/netip"
 	"golang.zx2c4.com/wireguard/conn"
@@ -37,13 +38,79 @@ type Config struct {
     LocalInternalIP      netip.Addr `json:"local_internal_ip"`
     LocalPrivateKey      string     `json:"local_private_key"`
 
-	RemoteInternalIP     netip.Addr `json:"remote_internal_ip"`
+	//RemoteInternalIP     netip.Addr `json:"remote_internal_ip"`
 	RemoteExternalHost   string     `json:"remote_external_host"`
 	RemoteExternalPort   uint16     `json:"remote_external_port"`
 	RemotePublicKey      string     `json:"remote_public_key"`
 
 	RemoteConnectIP      netip.Addr `json:"remote_connect_ip"`
 	RemoteConnectPort    uint16     `json:"remote_connect_port"`
+}
+
+func parseChunk(chunk string) map[string]string {
+	ret := make(map[string]string)
+	for _, line := range strings.Split(chunk, "\n") {
+		bits := strings.SplitN(strings.Split(line, "#")[0], "=", 2)
+		if len(bits)<2 {
+			continue
+		}
+		key, value := strings.TrimSpace(bits[0]), strings.TrimSpace(bits[1])
+		ret[key] = value
+	}
+	return ret
+}
+
+func parsePort(s string) uint16 {
+	port, perr := strconv.ParseUint(s, 10, 16)
+	if perr != nil {
+		return 0
+	}
+	return uint16(port)
+}
+
+func parseConfig(fn string) (Config, error) {
+	var config Config
+
+	dat, err := os.ReadFile(fn)
+	if err != nil {
+		return config, err
+	}
+
+	chunks := strings.Split(string(dat), "\n[Peer]")
+	if len(chunks)==1 {
+		return config, errors.New("No peers found in configuration.")
+	}
+
+	iface := parseChunk(chunks[0])
+
+	config.LocalInternalIP = netip.MustParseAddr(strings.Split(iface["Address"], "/")[0])
+	config.LocalPrivateKey = iface["PrivateKey"]
+
+	for _, chunk := range chunks[1:len(chunks)] {
+		peer := parseChunk(chunk)
+
+		config.RemotePublicKey = peer["PublicKey"]
+
+		sep_index := strings.LastIndex(peer["Endpoint"], ":")
+		if sep_index == -1 {
+			continue
+		}
+
+		config.RemoteExternalHost = peer["Endpoint"][0:sep_index]
+		config.RemoteExternalPort = parsePort(peer["Endpoint"][sep_index+1:len(peer["Endpoint"])])
+
+		remote_internal_ip, err := netip.ParseAddr(strings.Split(peer["AllowedIPs"], "/32")[0])
+		if err == nil {
+			config.RemoteConnectIP = remote_internal_ip
+		}
+		
+		config.RemoteConnectPort = 22
+		
+		return config, nil
+	}
+
+
+	return config, errors.New("No suitable peer found.")
 }
 
 func resolveExternalHostPort(host string, port uint16) string {
@@ -56,20 +123,29 @@ func resolveExternalHostPort(host string, port uint16) string {
 }
 
 func main() {
-	configFileName := flag.String("c", "", "path to JSON config file")
+	configFileName := flag.String("c", "", "path to WireGuard config file")
 	flag.Parse()
 
 	var config Config
 
 	if *configFileName != "" {
-		jsonFile, err := os.Open(*configFileName)
-		byteValue, _ := ioutil.ReadAll(jsonFile)
-		err = json.Unmarshal(byteValue, &config)
+		c, err := parseConfig(*configFileName)
 		if err != nil {
 			log.Panic(err)
 		}
+		config = c
 	} else {
 		log.Fatal("Please specify a JSON config file with -c <file.json>")
+	}
+
+	if flag.NArg() >= 1 {
+		// host is supplied
+		config.RemoteConnectIP = netip.MustParseAddr(flag.Arg(0))
+	}
+
+	if flag.NArg() >= 2 {
+		// port is supplied
+		config.RemoteConnectPort = parsePort(flag.Arg(1))
 	}
 
 	tun, tnet, err := netstack.CreateNetTUN(

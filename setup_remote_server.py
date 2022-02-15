@@ -1,7 +1,10 @@
 #!/usr/bin/python3
 """
-Sets up a remote server 
+Sets up a remote server for access over WireGuard and creates a corresponding
+local config file.
 
+WARNING: this will sudo on the server and meddle with the WireGuard
+configuration, firewall and systemd services.
 
 """
 
@@ -139,18 +142,4 @@ Endpoint = %s:%s
     remote_external_port
 ))
 
-
-# open(remote_host.split('@')[-1] + ".json", "w").write(json.dumps({
-#     'local_internal_ip': local_internal_ip,
-#     "local_private_key": local_private_key,
-
-#     'remote_internal_ip': remote_internal_ip,
-#     "remote_external_host": remote_host,
-#     "remote_external_port": remote_external_port,
-#     "remote_public_key": remote_public_key,
-
-#     "remote_connect_ip": remote_internal_ip,
-#     "remote_connect_port": 22
-# }, indent=4))
-
-print('ok')
+print('Successfully created configuration.')
