@@ -6,21 +6,47 @@ local config file.
 WARNING: this will sudo on the server and meddle with the WireGuard
 configuration, firewall and systemd services.
 
+Whilst the resulting configuration is intended to be used for temporary
+point-to-point connections, it includes 'random' local and remote internal IPs
+based on the hash of the remote server and local user names. This should mean
+that:
+
+- Multiple users are likely to have different local internal IPs so can share
+  the same remote configuration.
+
+- Different servers are likely to have different remote internal IPs (and the
+  configurations different local internal IPs) so that multiple non-conflicting
+  connections to different servers could be made at the same time if desired.
+
+
 """
 
 import base64
+import hashlib
+import getpass
 import json
 import shlex
 import subprocess
+import struct
 import sys
 import time
 
-local_internal_ip = '10.202.23.100'
-remote_internal_ip = '10.202.23.1'
+def hash_ip_segment(s, num_octets):
+    # hash to a 32-bit int
+    v, = struct.unpack("I", hashlib.sha1(s.encode('ascii')).digest()[:4])
+    # avoid a last octet of .255
+    ret, v = [str(v%255)], v//255
+    for n in range(num_octets-1):
+        ret.append(str(v&0xff))
+        v >>= 8
+    return ".".join(ret[::-1])
+
+remote_host = sys.argv[1]
+local_internal_ip = '10.202.' + hash_ip_segment(getpass.getuser() + '@' + remote_host.split("@")[-1], 2)
+remote_internal_ip = '10.203.' + hash_ip_segment(remote_host.split("@")[-1], 2)
 remote_external_port = 51232
 wireguard_interface = "wg99"
 
-remote_host = sys.argv[1]
 local_private_key = subprocess.check_output(["wg", "genkey"]).decode('ascii').strip()
 local_public_key = subprocess.check_output(["wg", "pubkey"], input=local_private_key.encode('ascii')).decode('ascii').strip()
 
@@ -54,9 +80,7 @@ if os.path.exists(wireguard_config_file):
 
     interface = parse_chunk(chunks[0])
 
-    if interface['Address']!=data['remote_internal_ip']:
-        print('Existing configuration has an incompatible remote internal IP!')
-        sys.exit(1)
+    data['remote_internal_ip'] = interface['Address'].split('/')[0]
 
     peers = [
         parse_chunk(chunk)
@@ -71,7 +95,7 @@ if os.path.exists(wireguard_config_file):
     ]
 else:
     interface = {
-        'Address': data['remote_internal_ip'],
+        'Address': data['remote_internal_ip']+'/32',
         'ListenPort': data['remote_external_port'],
         'PrivateKey': subprocess.check_output(["wg", "genkey"]).decode('ascii').strip()
     }
@@ -89,6 +113,7 @@ for peer in peers:
 open(wireguard_config_file, "w").write(conf + '\\n')
 
 public_key = subprocess.check_output(["wg", "pubkey"], input=interface['PrivateKey'].encode('ascii')).decode('ascii').strip()
+print('REMOTE_INTERNAL_IP[' + data['remote_internal_ip'] + ']')
 print('PUBLIC_KEY[' + public_key + ']')
 
 if os.path.exists('/usr/sbin/ufw'):
@@ -118,7 +143,8 @@ process.communicate()
 if process.returncode != 0:
     print(output)
     sys.exit(1)
-    
+
+remote_internal_ip = output.strip().split('REMOTE_INTERNAL_IP[')[1].split(']')[0]    
 remote_public_key = output.strip().split('PUBLIC_KEY[')[1].split(']')[0]
 
 if len(remote_public_key)!=44:

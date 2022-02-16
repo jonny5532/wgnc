@@ -124,6 +124,8 @@ func resolveExternalHostPort(host string, port uint16) string {
 
 func main() {
 	configFileName := flag.String("c", "", "path to WireGuard config file")
+	port := flag.Int("p", 22, "port to connect to (default 22)")
+	mtu := flag.Int("mtu", 1420, "tunnel MTU (default 1420)")
 	flag.Parse()
 
 	var config Config
@@ -139,19 +141,22 @@ func main() {
 	}
 
 	if flag.NArg() >= 1 {
-		// host is supplied
+		// host is supplied as an arg
 		config.RemoteConnectIP = netip.MustParseAddr(flag.Arg(0))
 	}
 
 	if flag.NArg() >= 2 {
-		// port is supplied
+		// port is supplied as an arg
 		config.RemoteConnectPort = parsePort(flag.Arg(1))
+	} else {
+		// else use flag port (or default)
+		config.RemoteConnectPort = uint16(*port)
 	}
 
 	tun, tnet, err := netstack.CreateNetTUN(
 		[]netip.Addr{config.LocalInternalIP},
-		[]netip.Addr{netip.MustParseAddr("8.8.8.8")}, // we don't need DNS?
-		1420)
+		[]netip.Addr{}, // we don't need DNS?
+		*mtu)
 	if err != nil {
 		log.Panic(err)
 	}
