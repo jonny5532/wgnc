@@ -9,9 +9,6 @@ WireGuard interface first.
 
 ## Caveats
 
-- Uses a patched wireguard-go (due to a incompatibility with the
-  netip.AddrFromSlice signature).
-
 - The code lacks proper error handling, particularly the
   WireGuard configuration parsing and network connection state handling.
 
@@ -42,7 +39,8 @@ Dockerfile to build for other architectures.
 `ssh -o ProxyCommand="./wgnc -c wg0.conf 10.0.0.1 22" user@server`
 
 where `10.0.0.1` is the internal IP of the remote peer. If the first entry in
-the `AllowedIPs` for the peer is a `/32` then this can be omitted:
+the `AllowedIPs` for the peer is a `/32`, and the desired port is `22`, then
+this can be omitted:
 
 `ssh -o ProxyCommand="./wgnc -c wg0.conf" user@server`
 

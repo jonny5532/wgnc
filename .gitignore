@@ -1,4 +1,4 @@
 *.save
-wgnc
+wgnc-*
 *.conf
 *.json

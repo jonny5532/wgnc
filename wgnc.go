@@ -20,11 +20,12 @@ import (
 	"io"
 	"log"
 	"net"
+	"net/netip"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
-	"golang.zx2c4.com/go118/netip"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/device"
 	"golang.zx2c4.com/wireguard/tun/netstack"
@@ -39,7 +40,6 @@ type Config struct {
     LocalInternalIP      netip.Addr `json:"local_internal_ip"`
     LocalPrivateKey      string     `json:"local_private_key"`
 
-	//RemoteInternalIP     netip.Addr `json:"remote_internal_ip"`
 	RemoteExternalHost   string     `json:"remote_external_host"`
 	RemoteExternalPort   uint16     `json:"remote_external_port"`
 	RemotePublicKey      string     `json:"remote_public_key"`
@@ -51,7 +51,8 @@ type Config struct {
 func parseChunk(chunk string) map[string]string {
 	ret := make(map[string]string)
 	for _, line := range strings.Split(chunk, "\n") {
-		bits := strings.SplitN(strings.Split(line, "#")[0], "=", 2)
+		line = strings.Split(strings.Split(line, "#")[0], ";")[0]
+		bits := strings.SplitN(line, "=", 2)
 		if len(bits)<2 {
 			continue
 		}
@@ -77,7 +78,8 @@ func parseConfig(fn string) (Config, error) {
 		return config, err
 	}
 
-	chunks := strings.Split(string(dat), "\n[Peer]")
+	peerSplit := regexp.MustCompile(`\n\s*\[Peer\]`)
+	chunks := peerSplit.Split(string(dat), 50)
 	if len(chunks)==1 {
 		return config, errors.New("No peers found in configuration.")
 	}
@@ -155,6 +157,10 @@ func main() {
 	if flag.NArg() >= 1 {
 		// host is supplied as an arg
 		config.RemoteConnectIP = netip.MustParseAddr(flag.Arg(0))
+	}
+	
+	if !config.RemoteConnectIP.IsValid() {
+		log.Fatal("The remote internal IP to connect to was not specified and could not be inferred from the configuration.")
 	}
 
 	if flag.NArg() >= 2 {
