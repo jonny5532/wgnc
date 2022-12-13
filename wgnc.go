@@ -11,6 +11,7 @@
 package main
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -113,10 +114,21 @@ func parseConfig(fn string) (Config, error) {
 	return config, errors.New("No suitable peer found.")
 }
 
+func GoogleDNSDialer(ctx context.Context, network, address string) (net.Conn, error) {
+	d := net.Dialer{}
+	return d.DialContext(ctx, "udp", "8.8.8.8:53")
+}
+
 func resolveExternalHostPort(host string, port uint16) string {
-	remote_external_ips, err := net.LookupIP(host)
+	r := net.Resolver{
+		PreferGo: true,
+		Dial: GoogleDNSDialer,
+	}
+	ctx := context.Background()
+
+	remote_external_ips, err := r.LookupIP(ctx, "ip", host)
 	if err != nil || len(remote_external_ips) < 1 {
-		log.Panic("Couldn't resolve", host)
+		log.Panic("Couldn't resolve ", host)
 	}
 
 	return net.JoinHostPort(remote_external_ips[0].String(), fmt.Sprintf("%d", port))
@@ -137,7 +149,7 @@ func main() {
 		}
 		config = c
 	} else {
-		log.Fatal("Please specify a JSON config file with -c <file.json>")
+		log.Fatal("Please specify a config file with -c <wireguard.conf>")
 	}
 
 	if flag.NArg() >= 1 {
